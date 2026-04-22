@@ -69,7 +69,9 @@ async def _show_main_menu(target, user_id: int):
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await _show_main_menu(message, message.from_user.id)
+    packs = await get_user_packs(message.from_user.id)
+    text = "твои наборы:" if packs else "наборов пока нет"
+    await message.answer(text, reply_markup=_packs_keyboard(packs))
 
 
 # ──────────────────────────────── выбор набора ────────────────────────────────
