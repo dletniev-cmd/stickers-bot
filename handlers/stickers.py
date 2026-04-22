@@ -97,7 +97,8 @@ async def handle_video(message: Message, bot: Bot) -> None:
 
             if not ok:
                 await status.edit_text(
-                    "ffmpeg не смог конвертировать видео\n"
+                    "не удалось сжать видео до 256 KB\n"
+                    "попробуй более короткий клип"
                     "убедись что на сервере установлен ffmpeg"
                 )
                 return
