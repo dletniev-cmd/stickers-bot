@@ -43,7 +43,7 @@ async def _run_ffmpeg(input_path: str, output_path: str, crf: int) -> bool:
         "-crf", str(crf),
         "-auto-alt-ref", "0",   # обязательно для альфа VP9
         "-an",                   # без аудио
-        "-t", "3",               # макс 3 секунды
+        "-t", "2.9",               # строго < 3 сек (лимит Telegram)
         output_path
     ]
 
