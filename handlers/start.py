@@ -26,40 +26,23 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-# ─── helpers ──────────────────────────────────────────────────────────────────
-
 def build_packs_keyboard(packs: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for pack in packs:
         pid, name, short_name, _ = pack
-        builder.button(
-            text=name,
-            callback_data=f"select_pack:{pid}",
-        )
+        builder.button(text=name, callback_data=f"select_pack:{pid}")
     builder.button(text="＋ создать набор", callback_data="create_pack")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def packs_text(packs: list) -> str:
-    if packs:
-        return "приветики, вот твои наборы:"
-    return "приветики, у тебя пока нет наборов"
-
-
-# ─── /start ───────────────────────────────────────────────────────────────────
-
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     packs = await get_user_packs(message.from_user.id)
-    await message.answer(
-        packs_text(packs),
-        reply_markup=build_packs_keyboard(packs),
-    )
+    text = "приветики, вот твои наборы:" if packs else "приветики, у тебя пока нет наборов"
+    await message.answer(text, reply_markup=build_packs_keyboard(packs))
 
-
-# ─── выбор набора ─────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("select_pack:"))
 async def cb_select_pack(callback: CallbackQuery, state: FSMContext) -> None:
@@ -73,19 +56,16 @@ async def cb_select_pack(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("набор не найден", show_alert=True)
         return
 
-    _, name, short_name, _ = pack
+    _, name, short_name, is_initialized = pack
     link = f"t.me/addstickers/{short_name}"
+    note = "" if is_initialized else "\n(ссылка заработает после первого стикера)"
 
     await callback.message.edit_text(
-        f"активный набор: {name}\n"
-        f"ссылка: {link}\n\n"
-        "просто кидай кружки или видео — буду добавлять в этот набор",
+        f"активный набор: {name}\nссылка: {link}{note}\n\nкидай кружки или видео — буду добавлять сюда",
         reply_markup=build_packs_keyboard(packs),
     )
     await callback.answer()
 
-
-# ─── создание набора — кнопка ─────────────────────────────────────────────────
 
 @router.callback_query(F.data == "create_pack")
 async def cb_create_pack(callback: CallbackQuery, state: FSMContext) -> None:
@@ -94,19 +74,14 @@ async def cb_create_pack(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── создание набора — название ───────────────────────────────────────────────
-
 @router.message(PackCreation.waiting_name)
 async def process_pack_name(message: Message, state: FSMContext) -> None:
     name = (message.text or "").strip()
-
     if not name or len(name) > 64:
         await message.answer("название должно быть от 1 до 64 символов, попробуй ещё раз:")
         return
-
     await state.update_data(pack_name=name)
     await state.set_state(PackCreation.waiting_short_name)
-
     bot_name = config.BOT_USERNAME
     await message.answer(
         f"теперь придумай короткую ссылку для набора\n"
@@ -116,12 +91,9 @@ async def process_pack_name(message: Message, state: FSMContext) -> None:
     )
 
 
-# ─── создание набора — короткое имя ──────────────────────────────────────────
-
 @router.message(PackCreation.waiting_short_name)
 async def process_pack_short_name(message: Message, state: FSMContext) -> None:
     raw = (message.text or "").strip().lower()
-
     if not re.match(r"^[a-z0-9_]{1,64}$", raw):
         await message.answer(
             "ссылка может содержать только латинские буквы, цифры и подчёркивания\n"
@@ -145,7 +117,8 @@ async def process_pack_short_name(message: Message, state: FSMContext) -> None:
 
     link = f"t.me/addstickers/{full_short_name}"
     await message.answer(
-        f"набор «{pack_name}» создан\n"
-        f"ссылка: {link}\n\n"
-        "просто кидай кружки или видео — буду добавлять их сюда и каждый раз скидывать готовый стикер"
+        f"набор «{pack_name}» готов\n"
+        f"ссылка: {link}\n"
+        f"(ссылка станет активной после первого стикера)\n\n"
+        f"просто кидай кружки или видео — буду добавлять их сюда и каждый раз скидывать готовый стикер"
     )

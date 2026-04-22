@@ -15,8 +15,6 @@ router = Router()
 EMOJI = ["🎥"]
 
 
-# ─── helper: upload + add sticker ────────────────────────────────────────────
-
 async def _upload_and_add(
     bot: Bot,
     user_id: int,
@@ -25,10 +23,6 @@ async def _upload_and_add(
     is_initialized: bool,
     webm_data: bytes,
 ) -> None:
-    """
-    Если набор ещё не создан — создаём через createNewStickerSet.
-    Если уже есть — добавляем через addStickerToSet.
-    """
     sticker_file = BufferedInputFile(webm_data, filename="sticker.webm")
 
     if not is_initialized:
@@ -45,7 +39,6 @@ async def _upload_and_add(
             ],
         )
     else:
-        # Сначала загружаем файл, получаем file_id
         uploaded = await bot.upload_sticker_file(
             user_id=user_id,
             sticker=sticker_file,
@@ -62,57 +55,64 @@ async def _upload_and_add(
         )
 
 
-# ─── handler ──────────────────────────────────────────────────────────────────
-
 @router.message(F.video_note | F.video)
 async def handle_video(message: Message, bot: Bot) -> None:
     user_id = message.from_user.id
 
-    # Проверяем активный набор
-    active = await get_active_pack(user_id)
-    if not active:
-        await message.reply(
-            "сначала выбери или создай набор — отправь /start"
-        )
-        return
-
-    pack_id, _, pack_name, short_name, is_initialized = active
-
-    # Определяем файл
-    if message.video_note:
-        tg_file = message.video_note
-    else:
-        tg_file = message.video
-
-    status = await message.reply("⏳ обрабатываю...")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        input_path = os.path.join(tmpdir, "input.mp4")
-        output_path = os.path.join(tmpdir, "sticker.webm")
-
-        # Скачиваем
-        try:
-            file_info = await bot.get_file(tg_file.file_id)
-            await bot.download_file(file_info.file_path, destination=input_path)
-        except Exception as e:
-            logger.error("Download error: %s", e)
-            await status.edit_text("не удалось скачать файл, попробуй ещё раз")
+    try:
+        active = await get_active_pack(user_id)
+        if not active:
+            await message.reply("сначала выбери или создай набор — отправь /start")
             return
 
-        # Конвертируем
-        ok = await convert_to_sticker(input_path, output_path)
-        if not ok:
-            await status.edit_text(
-                "не удалось конвертировать видео\n"
-                "убедись что это обычное видео или кружок"
-            )
-            return
+        pack_id, _, pack_name, short_name, is_initialized = active
 
-        # Читаем результат
-        with open(output_path, "rb") as f:
-            webm_data = f.read()
+        if message.video_note:
+            tg_file = message.video_note
+        else:
+            tg_file = message.video
 
-        # Добавляем в набор
+        status = await message.reply("⏳ обрабатываю...")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input.mp4")
+            output_path = os.path.join(tmpdir, "sticker.webm")
+
+            # Скачиваем файл
+            try:
+                file_info = await bot.get_file(tg_file.file_id)
+                await bot.download_file(file_info.file_path, destination=input_path)
+            except Exception as e:
+                logger.error("Download error: %s", e)
+                await status.edit_text(f"не удалось скачать файл: {e}")
+                return
+
+            # Конвертируем через ffmpeg
+            try:
+                ok = await convert_to_sticker(input_path, output_path)
+            except Exception as e:
+                logger.error("Converter exception: %s", e)
+                await status.edit_text(f"ошибка конвертации: {e}")
+                return
+
+            if not ok:
+                await status.edit_text(
+                    "ffmpeg не смог конвертировать видео\n"
+                    "убедись что на сервере установлен ffmpeg"
+                )
+                return
+
+            if not os.path.exists(output_path):
+                await status.edit_text("файл после конвертации не найден — что-то пошло не так")
+                return
+
+            file_size = os.path.getsize(output_path)
+            logger.info("Converted sticker size: %d bytes", file_size)
+
+            with open(output_path, "rb") as f:
+                webm_data = f.read()
+
+        # Загружаем в телеграм
         try:
             await _upload_and_add(
                 bot=bot,
@@ -124,39 +124,51 @@ async def handle_video(message: Message, bot: Bot) -> None:
             )
         except TelegramBadRequest as e:
             err = str(e).lower()
-            logger.error("Telegram error: %s", e)
+            logger.error("Telegram API error: %s", e)
 
             if "stickerset_invalid" in err or "name is already occupied" in err:
                 await status.edit_text(
-                    "это имя набора уже занято на телеграме\n"
+                    "имя набора уже занято на телеграме\n"
                     "создай новый набор с другой ссылкой — отправь /start"
                 )
             elif "video_sticker_too_big" in err:
-                await status.edit_text("видео слишком большое после конвертации, попробуй более короткое")
+                await status.edit_text("видео слишком большое, попробуй покороче")
             elif "sticker_video_no_alpha" in err:
-                await status.edit_text("не удалось создать прозрачный фон, попробуй другое видео")
+                await status.edit_text("не удалось добавить альфа-канал, попробуй другое видео")
+            elif "peer_id_invalid" in err or "bot_admin" in err:
+                await status.edit_text(
+                    f"ошибка прав: {e}\n"
+                    "убедись что бот создан через @BotFather и у него есть права на создание стикеров"
+                )
             else:
                 await status.edit_text(f"ошибка телеграма: {e}")
             return
         except Exception as e:
-            logger.error("Unexpected error: %s", e)
-            await status.edit_text(f"неожиданная ошибка: {e}")
+            logger.error("Unexpected upload error: %s", e)
+            await status.edit_text(f"неожиданная ошибка при загрузке: {e}")
             return
 
-        # Если набор только что создан — отмечаем в БД
+        # Первый стикер — отмечаем набор как созданный
         if not is_initialized:
             await mark_pack_initialized(pack_id)
 
-    # Удаляем статус-сообщение и отправляем готовый стикер
-    try:
-        await status.delete()
-    except Exception:
-        pass
+        # Удаляем статус и присылаем стикер
+        try:
+            await status.delete()
+        except Exception:
+            pass
 
-    try:
-        sticker_set = await bot.get_sticker_set(short_name)
-        last_sticker = sticker_set.stickers[-1]
-        await message.reply_sticker(last_sticker.file_id)
+        try:
+            sticker_set = await bot.get_sticker_set(short_name)
+            last_sticker = sticker_set.stickers[-1]
+            await message.reply_sticker(last_sticker.file_id)
+        except Exception as e:
+            logger.error("Error sending sticker back: %s", e)
+            await message.reply("стикер добавлен в набор ✓")
+
     except Exception as e:
-        logger.error("Error sending sticker back: %s", e)
-        await message.reply("стикер добавлен в набор")
+        logger.exception("Unhandled error in handle_video: %s", e)
+        try:
+            await message.reply(f"что-то пошло не так: {e}")
+        except Exception:
+            pass

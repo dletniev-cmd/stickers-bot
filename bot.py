@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -17,21 +18,21 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    if not config.BOT_TOKEN:
-        raise ValueError("BOT_TOKEN не задан — добавь его в .env или переменные окружения")
+    # Проверяем ffmpeg при старте
+    if shutil.which("ffmpeg") is None:
+        logger.error("ffmpeg NOT FOUND — стикеры работать не будут!")
+    else:
+        logger.info("ffmpeg found: %s", shutil.which("ffmpeg"))
 
     bot = Bot(token=config.BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Получаем username бота один раз при старте
     bot_info = await bot.get_me()
     config.BOT_USERNAME = bot_info.username
     logger.info("Bot started: @%s", config.BOT_USERNAME)
 
-    # Инициализируем БД
     await init_db()
 
-    # Подключаем роутеры
     dp.include_router(start_router)
     dp.include_router(sticker_router)
 
