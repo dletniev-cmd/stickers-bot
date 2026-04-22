@@ -2,7 +2,12 @@ import asyncio
 import logging
 import os
 
+import imageio_ffmpeg
+
 logger = logging.getLogger(__name__)
+
+# Используем бинарник ffmpeg из imageio-ffmpeg (не зависит от системного PATH)
+_FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 
 async def convert_to_sticker(input_path: str, output_path: str) -> bool:
@@ -31,7 +36,7 @@ async def convert_to_sticker(input_path: str, output_path: str) -> bool:
     )
 
     cmd = [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-i", input_path,
         "-vf", vf,
         "-c:v", "libvpx-vp9",
