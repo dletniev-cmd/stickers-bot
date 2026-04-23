@@ -27,7 +27,12 @@ async def main() -> None:
     bot = Bot(token=config.BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    bot_info = await bot.get_me()
+    try:
+        bot_info = await bot.get_me()
+    except Exception as e:
+        logger.error("Не удалось подключиться к Telegram: %s", e)
+        await bot.session.close()
+        return
     config.BOT_USERNAME = bot_info.username
     logger.info("Bot started: @%s", config.BOT_USERNAME)
 
