@@ -6,9 +6,14 @@ from collections import defaultdict
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, InputSticker, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InputSticker,
+    Message,
+)
 
-from converter import convert_to_sticker
+from converter import convert_to_sticker, MAX_STICKER_DURATION
 from database import get_active_pack, mark_pack_initialized
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,8 @@ async def _convert_and_upload(
     is_initialized: bool,
     tg_file,
     is_photo: bool,
+    start_time: float = 0.0,
+    clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
         ext = "jpg" if is_photo else "mp4"
@@ -49,7 +56,12 @@ async def _convert_and_upload(
         file_info = await bot.get_file(tg_file.file_id)
         await bot.download_file(file_info.file_path, destination=input_path)
 
-        ok = await convert_to_sticker(input_path, output_path, is_photo=is_photo)
+        ok = await convert_to_sticker(
+            input_path, output_path,
+            is_photo=is_photo,
+            start_time=start_time,
+            clip_duration=clip_duration,
+        )
         if not ok:
             return False
 
@@ -91,7 +103,7 @@ async def _send_last_sticker(bot: Bot, message: Message, short_name: str, status
 # ──────────────────────────────── альбом ────────────────────────────────
 
 async def _process_album(media_group_id: str, first_msg: Message, bot: Bot):
-    await asyncio.sleep(0.7)  # ждём пока телеграм пришлёт все фото альбома
+    await asyncio.sleep(0.7)
 
     messages = _album_buffers.pop(media_group_id, [])
     _album_tasks.pop(media_group_id, None)
@@ -169,6 +181,11 @@ async def handle_media(message: Message, bot: Bot) -> None:
             await status.edit_text("не удалось добавить альфа-канал")
         elif "stickerset_invalid" in err or "name is already occupied" in err:
             await status.edit_text("имя набора занято — создай новый через /start")
+        elif "video_too_long" in err or "sticker_video_too_long" in err:
+            await status.edit_text(
+                "Telegram не принял стикер — слишком длинный.\n"
+                "Попробуй отправить более короткое видео (до 5 с)."
+            )
         else:
             await status.edit_text(f"ошибка телеграма: {e}")
         return
