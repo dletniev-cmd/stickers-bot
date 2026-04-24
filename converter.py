@@ -8,8 +8,36 @@ logger = logging.getLogger(__name__)
 
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
-MAX_SIZE_BYTES = 256 * 1024
-MAX_STICKER_DURATION = 2.9
+MAX_SIZE_BYTES       = 256 * 1024
+MAX_STICKER_DURATION = 4.9
+
+# Видео / кружки → круглая маска
+_VF_VIDEO = (
+    "scale=512:512:force_original_aspect_ratio=increase,"
+    "crop=512:512,"
+    "format=rgba,"
+    "geq="
+    "r='r(X,Y)':"
+    "g='g(X,Y)':"
+    "b='b(X,Y)':"
+    "a='255*lt(hypot(X-W/2,Y-H/2),W/2)',"
+    "format=yuva420p"
+)
+
+# Фото → квадрат со скруглёнными углами (радиус 80 px при 512x512 ≈ 15 %)
+# Логика: пиксель прозрачен, только если он в угловой зоне (cx<R И cy<R)
+# И при этом дальше R от центра ближайшего угла.
+_VF_PHOTO = (
+    "scale=512:512:force_original_aspect_ratio=increase,"
+    "crop=512:512,"
+    "format=rgba,"
+    "geq="
+    "r='r(X,Y)':"
+    "g='g(X,Y)':"
+    "b='b(X,Y)':"
+    "a='255*(1-lt(min(X,W-1-X),80)*lt(min(Y,H-1-Y),80)*gt(hypot(min(X,W-1-X)-80,min(Y,H-1-Y)-80),80))',"
+    "format=yuva420p"
+)
 
 
 async def _run_ffmpeg(
@@ -20,17 +48,7 @@ async def _run_ffmpeg(
     start_time: float = 0.0,
     clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
-    vf = (
-        "scale=512:512:force_original_aspect_ratio=increase,"
-        "crop=512:512,"
-        "format=rgba,"
-        "geq="
-        "r='r(X,Y)':"
-        "g='g(X,Y)':"
-        "b='b(X,Y)':"
-        "a='255*lt(hypot(X-W/2,Y-H/2),W/2)',"
-        "format=yuva420p"
-    )
+    vf = _VF_PHOTO if is_photo else _VF_VIDEO
 
     cmd = [_FFMPEG, "-y"]
 
@@ -62,7 +80,8 @@ async def _run_ffmpeg(
     _, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        logger.error("ffmpeg error (crf=%d):\n%s", crf, stderr.decode(errors="replace"))
+        logger.error("ffmpeg error (crf=%d):
+%s", crf, stderr.decode(errors="replace"))
         return False
     return True
 
@@ -79,7 +98,7 @@ async def convert_to_sticker(
         if not ok:
             return False
         size = os.path.getsize(output_path)
-        logger.info("crf=%d → %d bytes", crf, size)
+        logger.info("crf=%d -> %d bytes", crf, size)
         if size <= MAX_SIZE_BYTES:
             return True
         logger.warning("too big (%d), retrying", size)
