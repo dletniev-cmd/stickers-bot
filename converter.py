@@ -8,13 +8,8 @@ logger = logging.getLogger(__name__)
 
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
-# Telegram ограничивает видеостикеры до 256 KB
 MAX_SIZE_BYTES = 256 * 1024
-
-# Максимальная длительность стикера (секунды).
-# Telegram официально указывает 3 с, но на практике принимает до ~5 с
-# если файл укладывается в 256 KB.
-MAX_STICKER_DURATION = 4.9
+MAX_STICKER_DURATION = 2.9
 
 
 async def _run_ffmpeg(
@@ -51,10 +46,8 @@ async def _run_ffmpeg(
         "-pix_fmt", "yuva420p",
         "-b:v", "0",
         "-crf", str(crf),
-        # 24 fps: меньше кадров при той же длине — больше бит на кадр → лучше качество
-        "-r", "24",
+        "-r", "30",
         "-auto-alt-ref", "0",
-        # многопоточное кодирование по строкам (быстрее без потери качества)
         "-row-mt", "1",
         "-an",
         "-t", f"{clip_duration:.3f}",
@@ -81,9 +74,7 @@ async def convert_to_sticker(
     start_time: float = 0.0,
     clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
-    # Для 5-секундных стикеров начинаем с более высокого CRF,
-    # чтобы сразу метить в нужный диапазон битрейта (~400 kbps)
-    for crf in [36, 40, 44, 49, 55, 63]:
+    for crf in [33, 38, 43, 48, 55, 63]:
         ok = await _run_ffmpeg(input_path, output_path, crf, is_photo, start_time, clip_duration)
         if not ok:
             return False
@@ -91,7 +82,7 @@ async def convert_to_sticker(
         logger.info("crf=%d → %d bytes", crf, size)
         if size <= MAX_SIZE_BYTES:
             return True
-        logger.warning("too big (%d), retrying with higher crf", size)
+        logger.warning("too big (%d), retrying", size)
 
     logger.error("could not compress to %d bytes", MAX_SIZE_BYTES)
     return False
