@@ -80,8 +80,7 @@ async def _run_ffmpeg(
     _, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        logger.error("ffmpeg error (crf=%d):
-%s", crf, stderr.decode(errors="replace"))
+        logger.error("ffmpeg error (crf=%d):\n%s", crf, stderr.decode(errors="replace"))
         return False
     return True
 
