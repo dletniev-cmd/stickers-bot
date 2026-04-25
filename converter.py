@@ -43,8 +43,8 @@ _VF_PHOTO = (
 
 # Фото → статичный webp: просто скейл, без прозрачности (TG сам обрежет)
 _VF_PHOTO_WEBP = (
-    "scale=512:512:force_original_aspect_ratio=decrease,"
-    "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0"
+    "scale=512:512:force_original_aspect_ratio=increase,"
+    "crop=512:512"
 )
 
 
@@ -126,16 +126,14 @@ async def _run_ffmpeg(
     return True
 
 
-# (crf, size, fps) — от лучшего к самому сжатому
+# (crf, fps) — только 512x512 (TG требует строго), жмём CRF и fps
 _ATTEMPTS = [
     (33, 512, 30),
-    (43, 512, 30),
-    (55, 512, 24),
-    (48, 384, 30),
-    (55, 384, 24),
-    (43, 256, 30),
-    (55, 256, 30),
-    (63, 256, 20),
+    (40, 512, 30),
+    (48, 512, 24),
+    (55, 512, 20),
+    (60, 512, 18),
+    (63, 512, 15),
 ]
 
 
