@@ -43,7 +43,7 @@ def _tg_error_text(e: TelegramBadRequest) -> str:
     if "stickerset_invalid" in err or "name is already occupied" in err:
         return "имя набора занято — создай новый через /start"
     if "video_too_long" in err or "sticker_video_too_long" in err or "sticker_video_long" in err:
-        return "видео слишком длинное — попробуй обрезать"
+        return "видео слишком длинное — стикер макс 3 секунды"
     if "sticker_file_invalid" in err:
         return "файл не подходит для стикера — попробуй другой"
     return f"ошибка телеграма: {e}"
@@ -61,8 +61,8 @@ async def _convert_and_upload(
     clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
-        ext        = "jpg" if is_photo else "mp4"
-        input_path = os.path.join(tmpdir, f"input.{ext}")
+        ext         = "jpg" if is_photo else "mp4"
+        input_path  = os.path.join(tmpdir, f"input.{ext}")
 
         file_info = await bot.get_file(tg_file.file_id)
         await bot.download_file(file_info.file_path, destination=input_path)
@@ -71,14 +71,17 @@ async def _convert_and_upload(
             output_path = os.path.join(tmpdir, "sticker.webp")
             ok = await convert_photo_to_webp(input_path, output_path)
             sticker_format = "static"
+            filename = "sticker.webp"
         else:
             output_path = os.path.join(tmpdir, "sticker.webm")
             ok = await convert_to_sticker(
                 input_path, output_path,
+                is_photo=False,
                 start_time=start_time,
                 clip_duration=clip_duration,
             )
             sticker_format = "video"
+            filename = "sticker.webm"
 
         if not ok:
             return False
@@ -86,7 +89,6 @@ async def _convert_and_upload(
         with open(output_path, "rb") as f:
             file_data = f.read()
 
-    filename   = "sticker.webp" if is_photo else "sticker.webm"
     sticker_file = BufferedInputFile(file_data, filename=filename)
 
     if not is_initialized:
