@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 MAX_SIZE_BYTES       = 256 * 1024
-MAX_STICKER_DURATION = 4.9
+MAX_STICKER_DURATION = 8.0
 
 # Видео / кружки → круглая маска
 _VF_VIDEO = (
@@ -24,42 +24,52 @@ _VF_VIDEO = (
     "format=yuva420p"
 )
 
-# Фото → квадрат со скруглёнными углами (радиус 80 px при 512x512 ≈ 15 %)
-# Логика: пиксель прозрачен, только если он в угловой зоне (cx<R И cy<R)
-# И при этом дальше R от центра ближайшего угла.
-_VF_PHOTO = (
+# Фото → просто скейл, без прозрачности (статичный webp)
+_VF_PHOTO_WEBP = (
     "scale=512:512:force_original_aspect_ratio=increase,"
-    "crop=512:512,"
-    "format=rgba,"
-    "geq="
-    "r='r(X,Y)':"
-    "g='g(X,Y)':"
-    "b='b(X,Y)':"
-    "a='255*(1-lt(min(X,W-1-X),80)*lt(min(Y,H-1-Y),80)*gt(hypot(min(X,W-1-X)-80,min(Y,H-1-Y)-80),80))',"
-    "format=yuva420p"
+    "crop=512:512"
 )
+
+
+async def convert_photo_to_webp(input_path: str, output_path: str) -> bool:
+    """Конвертирует фото в статичный webp стикер (512x512)."""
+    cmd = [
+        _FFMPEG, "-y",
+        "-i", input_path,
+        "-vf", _VF_PHOTO_WEBP,
+        "-vframes", "1",
+        "-q:v", "80",
+        output_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logger.error("ffmpeg photo error:\n%s", stderr.decode(errors="replace"))
+        return False
+    size = os.path.getsize(output_path)
+    logger.info("photo webp size: %d bytes", size)
+    return size <= MAX_SIZE_BYTES
 
 
 async def _run_ffmpeg(
     input_path: str,
     output_path: str,
     crf: int,
-    is_photo: bool,
     start_time: float = 0.0,
     clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
-    vf = _VF_PHOTO if is_photo else _VF_VIDEO
-
     cmd = [_FFMPEG, "-y"]
 
-    if is_photo:
-        cmd += ["-loop", "1"]
-    elif start_time > 0.0:
+    if start_time > 0.0:
         cmd += ["-ss", f"{start_time:.3f}"]
 
     cmd += [
         "-i", input_path,
-        "-vf", vf,
+        "-vf", _VF_VIDEO,
         "-c:v", "libvpx-vp9",
         "-pix_fmt", "yuva420p",
         "-b:v", "0",
@@ -88,12 +98,11 @@ async def _run_ffmpeg(
 async def convert_to_sticker(
     input_path: str,
     output_path: str,
-    is_photo: bool = False,
     start_time: float = 0.0,
     clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
     for crf in [33, 38, 43, 48, 55, 63]:
-        ok = await _run_ffmpeg(input_path, output_path, crf, is_photo, start_time, clip_duration)
+        ok = await _run_ffmpeg(input_path, output_path, crf, start_time, clip_duration)
         if not ok:
             return False
         size = os.path.getsize(output_path)

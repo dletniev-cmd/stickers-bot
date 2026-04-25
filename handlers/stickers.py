@@ -12,7 +12,7 @@ from aiogram.types import (
     Message,
 )
 
-from converter import convert_to_sticker, MAX_STICKER_DURATION
+from converter import convert_to_sticker, convert_photo_to_webp, MAX_STICKER_DURATION
 from database import get_active_pack, mark_pack_initialized
 
 logger = logging.getLogger(__name__)
@@ -42,8 +42,8 @@ def _tg_error_text(e: TelegramBadRequest) -> str:
         return "не получилось добавить прозрачность — попробуй другое видео"
     if "stickerset_invalid" in err or "name is already occupied" in err:
         return "имя набора занято — создай новый через /start"
-    if "video_too_long" in err or "sticker_video_too_long" in err:
-        return "видео слишком длинное для стикера — обрежь до 3 секунд"
+    if "video_too_long" in err or "sticker_video_too_long" in err or "sticker_video_long" in err:
+        return "видео слишком длинное — попробуй обрезать"
     if "sticker_file_invalid" in err:
         return "файл не подходит для стикера — попробуй другой"
     return f"ошибка телеграма: {e}"
@@ -61,42 +61,49 @@ async def _convert_and_upload(
     clip_duration: float = MAX_STICKER_DURATION,
 ) -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
-        ext         = "jpg" if is_photo else "mp4"
-        input_path  = os.path.join(tmpdir, f"input.{ext}")
-        output_path = os.path.join(tmpdir, "sticker.webm")
+        ext        = "jpg" if is_photo else "mp4"
+        input_path = os.path.join(tmpdir, f"input.{ext}")
 
         file_info = await bot.get_file(tg_file.file_id)
         await bot.download_file(file_info.file_path, destination=input_path)
 
-        ok = await convert_to_sticker(
-            input_path, output_path,
-            is_photo=is_photo,
-            start_time=start_time,
-            clip_duration=clip_duration,
-        )
+        if is_photo:
+            output_path = os.path.join(tmpdir, "sticker.webp")
+            ok = await convert_photo_to_webp(input_path, output_path)
+            sticker_format = "static"
+        else:
+            output_path = os.path.join(tmpdir, "sticker.webm")
+            ok = await convert_to_sticker(
+                input_path, output_path,
+                start_time=start_time,
+                clip_duration=clip_duration,
+            )
+            sticker_format = "video"
+
         if not ok:
             return False
 
         with open(output_path, "rb") as f:
-            webm_data = f.read()
+            file_data = f.read()
 
-    sticker_file = BufferedInputFile(webm_data, filename="sticker.webm")
+    filename   = "sticker.webp" if is_photo else "sticker.webm"
+    sticker_file = BufferedInputFile(file_data, filename=filename)
 
     if not is_initialized:
         await bot.create_new_sticker_set(
             user_id=user_id,
             name=short_name,
             title=pack_name,
-            stickers=[InputSticker(sticker=sticker_file, emoji_list=EMOJI, format="video")],
+            stickers=[InputSticker(sticker=sticker_file, emoji_list=EMOJI, format=sticker_format)],
         )
     else:
         uploaded = await bot.upload_sticker_file(
-            user_id=user_id, sticker=sticker_file, sticker_format="video"
+            user_id=user_id, sticker=sticker_file, sticker_format=sticker_format
         )
         await bot.add_sticker_to_set(
             user_id=user_id,
             name=short_name,
-            sticker=InputSticker(sticker=uploaded.file_id, emoji_list=EMOJI, format="video"),
+            sticker=InputSticker(sticker=uploaded.file_id, emoji_list=EMOJI, format=sticker_format),
         )
 
     return True
