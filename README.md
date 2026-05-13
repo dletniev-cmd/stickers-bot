@@ -1,28 +1,16 @@
-# Verify Age - Flutter App
+# github_pusher
 
-Приложение для подтверждения возраста с использованием сканирования лица.
+A new Flutter project.
 
-## Сборка
+## Getting Started
 
-```bash
-flutter pub get
-flutter build apk --release
-```
+This project is a starting point for a Flutter application.
 
-## GitHub Actions
+A few resources to get you started if this is your first Flutter project:
 
-Для автоматической сборки APK через GitHub Actions используйте workflow из `.github/workflows/build.yml`.
+- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-## Структура
-
-- `lib/main.dart` — точка входа, настройка темы
-- `lib/theme.dart` — цветовая система (light/dark)
-- `lib/screens/home_screen.dart` — главный экран с 3 слайдами
-- `lib/widgets/` — переиспользуемые виджеты
-- `lib/painters/` — кастомные рисовальщики (кольцо сканера)
-
-## Экраны
-
-1. **Intro** — приветственный экран с фичами и кнопкой "Начать"
-2. **Code** — ввод 5-значного кода с кастомной клавиатурой
-3. **Verification** — сканирование лица, FAQ, кнопка Telegram
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.
